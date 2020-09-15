@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, shrink-to-fit=no">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>路面情况管理网页端</title>
+    <link rel="stylesheet" href="../static/bootstrap.min.css">
+    <script src="{{url_for('static', filename='jquery.slim.min.js')}}"></script>
+    <script src="{{url_for('static', filename='popper.min.js')}}"></script>
+    <script src="{{url_for('static', filename='bootstrap.min.js')}}"></script>
+    <script src="{{url_for('static', filename='d3.js')}}"></script>
+
+    <style>
+    .node circle {
+      stroke: white;
+      stroke-width: 1.5px;
+      opacity: 1.0;
+    }
+
+    line {
+      stroke: black;
+      stroke-width: 1.5px;
+      stroke-opacity: 1.0;
+    }
+    </style>
+   {% block head %}{% endblock %}
+</head>
+<body style="background-color:pink;">
+{% block body %}{% endblock %}
+</body>
+</html>
