@@ -5,8 +5,9 @@
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>鼠标事件和选中样式</title>
+    <title>道路故障情况浏览</title>
     <link href="//a.amap.com/Loca/static/manual/example/style/demo.css" rel="stylesheet">
+    <script src="/static/jquery.min.js"></script>
     <style>
         html,
         body,
@@ -20,12 +21,13 @@
 </head>
 
 <body>
-    <div id="container" class="container">
-    </div>
+    <div id="container" class="container"></div>
+    <div id="picture" ></div>
     <script src="https://webapi.amap.com/maps?v=1.4.15&key=0eb46939ed097108e843549883567bde"></script>
     <script src="//webapi.amap.com/loca?v=1.3.2&key=0eb46939ed097108e843549883567bde"></script>
     <script src="//a.amap.com/Loca/static/manual/example/script/demo.js"></script>
-    <script src="{{url_for('static', filename='earthquake.js')}}"></script> <!-- 这里是数据的文件-->
+    <script>document.write('<script src="/static/data/earthquake.js?_dc='+new Date().getTime()+'"><\/script>')</script>
+    <!-- 这里是数据的文件,强制更新-->
     <script>
         var map = new AMap.Map('container', {
             mapStyle: 'amap://styles/fresh',
@@ -50,16 +52,30 @@
             var originalEvent = ev.originalEvent;
 
             openInfoWin(map, originalEvent, {
-                '名称': rawData.title,
+                '机号': rawData.type,
+                '时间': rawData.time,
+                '故障情况': rawData.condition,
                 '位置': rawData.lnglat
             });
+           $("body").append(" <img src=\"/static/data/eg_tulip.jpg\"  alt=\"郁金香\" width=\"400\" height=\"300\" style=\"position:fixed;left:0;top:0; z-index: 99999;\" /> ");
+
+
+           //document.getElementById(id).src=url;
+           //图片变化
+
         });
         //鼠标移动到数据点上显示信息
 
         layer.on('mouseleave', function (ev) {
             closeInfoWin();
+            $('img').css('z-index', -99999);
         });
         //鼠标离开的事件，即关闭信息窗口
+        layer.on('click', function (ev) {
+
+
+        });
+        //鼠标点击的事件，即关闭信息窗口
 
         layer.setData(earthQuake, {
             lnglat: function (data) {
@@ -71,8 +87,8 @@
         layer.setOptions({
             style: {
                 radius: 10,
-                color: '#07E8E4',
-                borderColor: '#07E8E4',
+                color: '#000000',
+                borderColor: '#ff00ff',
                 borderWidth: 1.5,
                 opacity: 0.8
             },
@@ -83,7 +99,20 @@
         });
         //配置数据点的样式
 
+
+        AMap.plugin([
+            'AMap.ControlBar',
+        ], function(){
+
+            // 添加 3D 罗盘控制
+            map.addControl(new AMap.ControlBar());
+        });
         layer.render();
+
+
+        //更新数据应该是再setdata+render
+
+    //这里要在双引号前加转义的符号，不然就会出错，被坑了好久
     </script>
 </body>
 
