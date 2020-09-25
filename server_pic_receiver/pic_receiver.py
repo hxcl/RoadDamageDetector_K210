@@ -12,6 +12,30 @@
 #     'pic_name': 
 # }
 
-# 使用 socket 发送时，先发送图片信息，再是图片本身（注意如何高效率分离两部分）
+# 使用 socket 发送时，先发送图片信息，再是图片本身
 
-import socket
+import socket, threading, json
+
+def link_handler(link, client):
+    """
+    
+    """
+
+    print("Sever start receiving the requeset from [%s:%s]" % (client[0], client[1]))
+
+    while True:
+        client_data = link.recv(1024).decode()
+        if client_data = "exit":
+            print("stop communication with [%s:%s]" % (client[0], client[1]))
+        
+        link.close()
+
+ip_port = (192.168.1.225, 3456)
+socket1 = socket.socket()
+socket1.bind(ip_port)
+socket1.listen(5)
+
+while True:
+    conn, address = socket1.accept()
+    t = threading.Thread(target=link_handler, args=(conn,address))
+    t.start()
