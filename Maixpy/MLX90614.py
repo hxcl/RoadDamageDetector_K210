@@ -50,3 +50,12 @@ class MLX90614():
     def readObjectTempC(self):
         self.ObjectTempC = self.readTemp(MLX90614_TOBJ1)
         return self.ObjectTempC
+
+if __name__ == "__main__":
+    IR_sensor_i2c = I2C(I2C.I2C0, freq=100000, scl=28, sda=29)
+    devices = IR_sensor_i2c.scan()
+    IR_sensor = MLX90614(IR_sensor_i2c)
+
+    IR_temp = IR_sensor.readObjectTempC()
+
+    print(IR_temp)
