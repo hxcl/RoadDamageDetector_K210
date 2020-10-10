@@ -1,5 +1,8 @@
-from flask import Flask,render_template,request
+from flask import Flask,render_template,request,jsonify
 import os,base64
+from database import get_db_conn, close_db_conn
+
+db_file = './roaddata.db'
 
 app = Flask(__name__)
 
@@ -12,14 +15,10 @@ def index():
 
 @app.route('/showPicture', methods=['POST', 'GET'])
 def picture():
-    # if request.method == "POST":
-    #     # 发送图片
-    #     img = open("static/data/eg_tulip.jpg", 'rb')  # 读取图片文件
-    #     data = base64.b64encode(img.read()).decode()  # 进行base64编码
-    #     html = '''<img src="data:image/jpg;base64,{}" style="width:100%;height:100%;"/>'''  # html代码
-    #     htmlstr = html.format(data)  # 添加数据
-    #     return htmlstr
-    pass
+    with open('./static/data/earthquake.js', 'r', encoding='utf-8') as f:
+        content = f.read()
+    earthQuake = content[17:len(content)-1]
+    return earthQuake
 
 
 @app.route('/receivePicture', methods=["GET", "POST"])
@@ -29,3 +28,4 @@ def receivePicture():
 
 if __name__ == "__main__":
     app.run(debug=True)
+
