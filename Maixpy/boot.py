@@ -27,6 +27,7 @@ server_port = 3456
 client_number = 0
 ####################################################################
 
+
 # 引脚分配
 ####################################################################
     # Air530
@@ -39,7 +40,7 @@ fm.register(9, fm.fpioa.GPIOHS12, force = True)#rdy
 fm.register(28, fm.fpioa.GPIOHS13, force = True)#mosi
 fm.register(26, fm.fpioa.GPIOHS14, force = True)#miso
 fm.register(27, fm.fpioa.GPIOHS15, force = True)#sclk
-    # Key
+    # Key0
 fm.register(35, fm.fpioa.GPIOHS1, force=True)
 ####################################################################
 
@@ -115,28 +116,34 @@ def GNSS_info_update(timer):
 tim = Timer(Timer.TIMER0, Timer.CHANNEL0, mode=Timer.MODE_PERIODIC, period=3000, callback=GNSS_info_update)
 
 # 按钮触发中断，回调函数判断当前状态
-def key_irq():
+def switch_irq():
+    # 刚开机，切换到路面检测
     if GLOBAL_STATE == 0:
         GLOBAL_STATE = 1
+        road_condition_detect()
+    # 正在路面检测模式，切换到口罩检测模式
     elif GLOBAL_STATE == 1:
         GLOBAL_STATE = 2
+        kpu.deinit(task)
+        gc.collect()
+        face_masked_and_temperature_detect()
+    # 正在口罩检测模式，切换到路面检测模式
     elif GLOBAL_STATE == 2:
         GLOBAL_STATE = 1
+        kpu.deinit(task)
+        gc.collect()
+        road_condition_detect()
+    # 出现未知错误，重启
     else:
-        reset()
+        machine.reset()
 
 key = GPIO(GPIO.GPIOHS1, GPIO.IN)
-key.irq(key_irq, GPIO.IRQ_RISING, GPIO.WAKEUP_NOT_SUPPORT)
-
-# 在下面这个大死循环里面，有路面检测和口罩识别两个任务的死循环
-# 两个任务的一次循环最后，都会判断一次全局变量 GLOBAL_STATE，以决定是否跳出，也就是切换任务
-# 全局变量 GLOBAL_STATE 在按键中断中修改
+key.irq(switch_irq, GPIO.IRQ_RISING, GPIO.WAKEUP_NOT_SUPPORT)
 
 
-while True:
-    
-    # 在路面检测程序里面，将进行获取图像-检测-发送图像的循环。同时会有定时器任务更新 GPS 数据
-    # 路面检测需要使用 GPS 因此启动定时器
+def road_condition_detect():
+# 在检测程序里面，将进行获取图像-检测-发送图像的循环。同时会有定时器任务更新 GPS 数据
+# 路面检测需要使用 GPS 因此先刷新一次，并启动定时器
     GNSS.GNSS_Read()
     GNSS.GNSS_Parese()
     lcd.draw_string(0,40,"Date: "+GNSS.date,lcd.BLACK,lcd.WHITE)
@@ -158,16 +165,15 @@ while True:
     # YOLO 类别
     classes = ["D00","D01","D10","D11","D20","D40","D43","D44"]
 
-    task = kpu.load("/sd/road_yolov2_new_anchor.kmodel")
+    kpu.load("/sd/road_yolov2_new_anchor.kmodel")
     anchor = (0.37, 0.51, 0.78, 0.9, 1.0, 1.09, 1.13, 2.22, 5.33, 5.95)
     a = kpu.init_yolo2(task, 0.17, 0.3, 5, anchor)
-
-    sock = socket.socket()
-    print(sock)
 
     clock = time.clock()
 
     while True:
+        sock = socket.socket()
+        print(sock)
         try:
             sock.connect(addr)
         except Exception as e:
@@ -244,14 +250,9 @@ while True:
             count += 1
             print("send:", count)
             sock.close()
-        
-        if GLOBAL_STATE == 2:
-            kpu.deinit(task)
-            ROAD_CONDITION_INIT = 0
-            break
 
-
-        # 口罩检测无需 GPS ，因此停止定时器避免打断
+def face_masked_and_temperature_detect():
+    # 口罩检测无需 GPS ，因此停止定时器避免打断
     tim.stop()
 
     class_IDs = ['no_mask', 'mask']
@@ -273,7 +274,6 @@ while True:
     img_lcd = image.Image()
 
     clock = time.clock()
-
     while (True):
         clock.tick()
         img = sensor.snapshot()
@@ -321,29 +321,29 @@ while True:
 
         print(clock.fps())
 
-        if GLOBAL_STATE == 1:
-            kpu.deinit(task)
-            break
+    def drawConfidenceText(image, rol, classid, value):
+        text = ""
+        _confidence = int(value * 100)
 
-def drawConfidenceText(image, rol, classid, value):
-    text = ""
-    _confidence = int(value * 100)
+        if classid == MASKED:
+            text = 'mask: ' + str(_confidence) + '%'
+        else:
+            text = 'no_mask: ' + str(_confidence) + '%'
 
-    if classid == MASKED:
-        text = 'mask: ' + str(_confidence) + '%'
-    else:
-        text = 'no_mask: ' + str(_confidence) + '%'
+        image.draw_string(rol[0], rol[1], text, color=color_R, scale=2.5)
 
-    image.draw_string(rol[0], rol[1], text, color=color_R, scale=2.5)
+    def LED_update():
+        if LED_state == LED_BLANK:
+            LED.set_LED(0, LED_BLANK)
+        elif LED_state == LED_RED:
+            LED.set_LED(0, LED_RED)
+        elif LED_state == LED_YELLOW:
+            LED.set_LED(0, LED_YELLOW)
+        elif LED_state == LED_GREEN:
+            LED.set_LED(0, LED_GREEN)
 
-def LED_update():
-    if LED_state == LED_BLANK:
-        LED.set_LED(0, LED_BLANK)
-    elif LED_state == LED_RED:
-        LED.set_LED(0, LED_RED)
-    elif LED_state == LED_YELLOW:
-        LED.set_LED(0, LED_YELLOW)
-    elif LED_state == LED_GREEN:
-        LED.set_LED(0, LED_GREEN)
+        LED.display()
 
-    LED.display()
+while True:
+    print("Waiting for task")
+    time.sleep(1)
