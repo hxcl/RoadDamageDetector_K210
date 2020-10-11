@@ -5,9 +5,8 @@ import KPU as kpu
 from Maix import GPIO
 from fpioa_manager import fm
 from machine import UART, Timer, I2C, reset
-from module import ws2812
+from modules import ws2812
 
-import init
 from Air530 import Air530
 from ADXL345_ATmode import Ace
 from MLX90614 import MLX90614
@@ -69,7 +68,14 @@ uart1 = UART(UART.UART1, 9600,8,0,0,timeout=1000,read_buf_len=2048)
 GNSS = Air530(uart1)
 
 # 展示 Logo 与介绍信息
-init()
+lcd.init(freq=1500000)
+lcd.clear(lcd.BLACK)
+time.sleep(1)
+img = image.Image('/sd/hxcl_logo.jpg')
+lcd.display(img)
+time.sleep(2)
+img = image.Image('/sd/introduction.jpg')
+lcd.display(img)
 
 # ESP32 连接 WiFi
 network = network.ESP32_SPI(cs=fm.fpioa.GPIOHS10,rst=fm.fpioa.GPIOHS11, rdy=fm.fpioa.GPIOHS12, mosi=fm.fpioa.GPIOHS13, miso=fm.fpioa.GPIOHS14, sclk=fm.fpioa.GPIOHS15)
@@ -109,10 +115,7 @@ def GNSS_info_update(timer):
 tim = Timer(Timer.TIMER0, Timer.CHANNEL0, mode=Timer.MODE_PERIODIC, period=3000, callback=GNSS_info_update)
 
 # 按钮触发中断，回调函数判断当前状态
-key = GPIO(GPIO.GPIOHS1, GPIO.IN)
-key.irq(test_irq, GPIO.IRQ_RISING, GPIO.WAKEUP_NOT_SUPPORT,7)
-
-def test_irq():
+def switch_irq():
     # 刚开机，切换到路面检测
     if GLOBAL_STATE == 0:
         GLOBAL_STATE = 1
@@ -132,6 +135,10 @@ def test_irq():
     # 出现未知错误，重启
     else:
         machine.reset()
+
+key = GPIO(GPIO.GPIOHS1, GPIO.IN)
+key.irq(switch_irq, GPIO.IRQ_RISING, GPIO.WAKEUP_NOT_SUPPORT)
+
 
 def road_condition_detect():
 # 在检测程序里面，将进行获取图像-检测-发送图像的循环。同时会有定时器任务更新 GPS 数据
@@ -157,7 +164,7 @@ def road_condition_detect():
     # YOLO 类别
     classes = ["D00","D01","D10","D11","D20","D40","D43","D44"]
 
-    kpu.load("/sd/road_condition.kmodel")
+    kpu.load("/sd/road_yolov2_new_anchor.kmodel")
     anchor = (0.37, 0.51, 0.78, 0.9, 1.0, 1.09, 1.13, 2.22, 5.33, 5.95)
     a = kpu.init_yolo2(task, 0.17, 0.3, 5, anchor)
 
@@ -176,9 +183,9 @@ def road_condition_detect():
 
         count = 0
         err   = 0
-        
+
         clock.tick()
-        
+
         img = sensor.snapshot()
         code = kpu.run_yolo2(task, img)
         print(clock.fps())
@@ -190,6 +197,7 @@ def road_condition_detect():
                 for i in code:
                     lcd.draw_string(i.x(), i.y(), classes[i.classid()], lcd.RED, lcd.WHITE)
                     lcd.draw_string(i.x(), i.y()+12, '%.3f'%i.value(), lcd.RED, lcd.WHITE)
+                    lcd.display(img)
         else:
             pass
 
@@ -198,8 +206,8 @@ def road_condition_detect():
             lcd.display(img)
         else:
             lcd.display(img)
-            
-            # json 
+
+            # json
             GNSS_data = [
                 {
                     'client_number' : client_number,
@@ -258,7 +266,7 @@ def face_masked_and_temperature_detect():
     sensor.set_hmirror(0)
     sensor.run(1)
 
-    task = kpu.load("/sd/face_mask.kmodel")
+    task = kpu.load("/sd/mask.kmodel")
 
     anchor = (0.1606, 0.3562, 0.4712, 0.9568, 0.9877, 1.9108, 1.8761, 3.5310, 3.4423, 5.6823)
     _ = kpu.init_yolo2(task, 0.5, 0.3, 5, anchor)
@@ -334,3 +342,7 @@ def face_masked_and_temperature_detect():
             LED.set_LED(0, LED_GREEN)
 
         LED.display()
+
+while True:
+    print("Waiting for task")
+    time.sleep(1)
