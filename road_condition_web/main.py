@@ -1,5 +1,4 @@
-from flask import Flask,render_template,request,jsonify
-import os,base64
+from flask import Flask,render_template
 from database import get_db_conn, close_db_conn
 
 db_file = './roaddata.db'
