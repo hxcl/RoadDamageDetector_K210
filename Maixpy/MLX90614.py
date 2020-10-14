@@ -21,6 +21,92 @@ MLX90614_ID2 = 0x3D
 MLX90614_ID3 = 0x3E
 MLX90614_ID4 = 0x3F
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 class MLX90614():
     def __init__(self, i2c_port):
         self.__i2c_addr = MLX90614_I2CADDR
@@ -31,7 +117,7 @@ class MLX90614():
     # 从寄存器地址读取指定的字节数
     def read(self, register, n):
         templist = self.__i2c_port.readfrom_mem(self.__i2c_addr, register, n, mem_size=8)
-        
+
         return templist
 
     def readTemp(self, register):
@@ -52,10 +138,11 @@ class MLX90614():
         return self.ObjectTempC
 
 if __name__ == "__main__":
-    IR_sensor_i2c = I2C(I2C.I2C0, freq=100000, scl=28, sda=29)
-    devices = IR_sensor_i2c.scan()
-    IR_sensor = MLX90614(IR_sensor_i2c)
+    while True:
+        IR_sensor_i2c = I2C(I2C.I2C0, freq=100000, scl=32, sda=33)
+        devices = IR_sensor_i2c.scan()
+        IR_sensor = MLX90614(IR_sensor_i2c)
 
-    IR_temp = IR_sensor.readObjectTempC()
+        IR_temp = IR_sensor.readObjectTempC()
 
-    print(IR_temp)
+        print(IR_temp)

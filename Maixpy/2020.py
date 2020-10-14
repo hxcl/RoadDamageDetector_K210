@@ -2,10 +2,10 @@
 
 import lcd, time, image, sensor, network, socket, json, gc
 import KPU as kpu
-from Maix import GPIO
 from fpioa_manager import fm
+from Maix import GPIO
 from machine import UART, Timer, I2C, reset
-from modules import ws2812
+#from modules import ws2812
 
 from Air530 import Air530
 from ADXL345_ATmode import Ace
@@ -18,7 +18,7 @@ GLOBAL_STATE = 0
 ####################################################################
 WIFI_SSID = 'ESP8266'
 WIFI_PASSWD = '43214321a'
-server_ip = "192.168.1.1"
+server_ip = "192.168.1.225"
 server_port = 3456
 ####################################################################
 
@@ -51,7 +51,7 @@ color_G = (0, 255, 0)
 color_B = (0, 0, 255)
 color_Yellow = (255, 255, 0)
 
-LED = ws2812(34, 1)
+#LED = ws2812(34, 1)
 
 LED_BLANK = 0
 LED_RED = 1
@@ -70,12 +70,12 @@ GNSS = Air530(uart1)
 # 展示 Logo 与介绍信息
 lcd.init(freq=1500000)
 lcd.clear(lcd.BLACK)
-time.sleep(1)
-img = image.Image('/sd/hxcl_logo.jpg')
-lcd.display(img)
-time.sleep(2)
-img = image.Image('/sd/introduction.jpg')
-lcd.display(img)
+lcd.rotation(1)
+#img = image.Image('/sd/hxcl_logo.jpg')
+#lcd.display(img)
+#time.sleep(2)
+#img = image.Image('/sd/introduction.jpg')
+#lcd.display(img)
 
 # ESP32 连接 WiFi
 network = network.ESP32_SPI(cs=fm.fpioa.GPIOHS10,rst=fm.fpioa.GPIOHS11, rdy=fm.fpioa.GPIOHS12, mosi=fm.fpioa.GPIOHS13, miso=fm.fpioa.GPIOHS14, sclk=fm.fpioa.GPIOHS15)
@@ -113,9 +113,12 @@ def GNSS_info_update(timer):
     GNSS.print_GNSS_info()
 
 tim = Timer(Timer.TIMER0, Timer.CHANNEL0, mode=Timer.MODE_PERIODIC, period=3000, callback=GNSS_info_update)
+tim.stop()
 
 # 按钮触发中断，回调函数判断当前状态
-def key_irq():
+def key_irq(pin_num):
+    global GLOBAL_STATE
+    print("IRQ:%d"%GLOBAL_STATE)
     if GLOBAL_STATE == 0:
         GLOBAL_STATE = 1
     elif GLOBAL_STATE == 1:
@@ -125,16 +128,60 @@ def key_irq():
     else:
         reset()
 
-key = GPIO(GPIO.GPIOHS1, GPIO.IN)
-key.irq(key_irq, GPIO.IRQ_RISING, GPIO.WAKEUP_NOT_SUPPORT)
+key = GPIO(GPIO.GPIOHS1, GPIO.IN, GPIO.PULL_DOWN)
+key.irq(key_irq, GPIO.IRQ_RISING, GPIO.WAKEUP_NOT_SUPPORT, 7)
+
+
+def drawConfidenceText(image, rol, classid, value, color):
+    text = ""
+    _confidence = int(value * 100)
+
+    if classid == MASKED:
+        text = 'mask: ' + str(_confidence) + '%'
+    else:
+        text = 'no_mask: ' + str(_confidence) + '%'
+
+    image.draw_string(rol[0], rol[1], text, color=color, scale=2.5)
+
+def LED_update():
+    if LED_state == LED_BLANK:
+        LED.set_LED(0, LED_BLANK)
+    elif LED_state == LED_RED:
+        LED.set_LED(0, LED_RED)
+    elif LED_state == LED_YELLOW:
+        LED.set_LED(0, LED_YELLOW)
+    elif LED_state == LED_GREEN:
+        LED.set_LED(0, LED_GREEN)
+
+    LED.display()
+
 
 # 在下面这个大死循环里面，有路面检测和口罩识别两个任务的死循环
 # 两个任务的一次循环最后，都会判断一次全局变量 GLOBAL_STATE，以决定是否跳出，也就是切换任务
 # 全局变量 GLOBAL_STATE 在按键中断中修改
-
-
 while True:
-    
+
+    sensor.reset()
+    sensor.set_pixformat(sensor.RGB565)
+    sensor.set_framesize(sensor.QVGA)
+    sensor.set_windowing((224, 224))
+    sensor.set_brightness(2)
+    sensor.run(1)
+
+    sock = socket.socket()
+    print(sock)
+
+
+    # YOLO 类别
+    classes = ["D00","D01","D10","D11","D20","D40","D43","D44"]
+
+    #task = kpu.load("/sd/road_yolov2_new_anchor.kmodel")
+    #task = kpu.load("/sd/road_yolov2.kmodel")
+    task = kpu.load(0x500000)
+    anchor = (0.37, 0.51, 0.78, 0.9, 1.0, 1.09, 1.13, 2.22, 5.33, 5.95)
+    a = kpu.init_yolo2(task, 0.17, 0.3, 5, anchor)
+
+
     # 在路面检测程序里面，将进行获取图像-检测-发送图像的循环。同时会有定时器任务更新 GPS 数据
     # 路面检测需要使用 GPS 因此启动定时器
     GNSS.GNSS_Read()
@@ -146,35 +193,15 @@ while True:
     lcd.draw_string(0,120,"Speed: "+str(GNSS.speed_to_groud_kh)+"km/h",lcd.BLACK,lcd.WHITE)
     lcd.draw_string(0,140,"Course_over_ground: "+str(GNSS.course_over_ground),lcd.BLACK,lcd.WHITE)
     GNSS.print_GNSS_info()
+
+    #GNSS.DataIsUseful = True
+
     tim.start()
-
-    sensor.reset(dual_buf = True)
-    sensor.set_pixformat(sensor.RGB565)
-    sensor.set_framesize(sensor.QVGA)
-    sensor.set_windowing((224, 224))
-    sensor.set_brightness(2)
-    sensor.run(1)
-
-    # YOLO 类别
-    classes = ["D00","D01","D10","D11","D20","D40","D43","D44"]
-
-    task = kpu.load("/sd/road_yolov2_new_anchor.kmodel")
-    anchor = (0.37, 0.51, 0.78, 0.9, 1.0, 1.09, 1.13, 2.22, 5.33, 5.95)
-    a = kpu.init_yolo2(task, 0.17, 0.3, 5, anchor)
-
-    sock = socket.socket()
-    print(sock)
 
     clock = time.clock()
 
     while True:
-        try:
-            sock.connect(addr)
-        except Exception as e:
-            print("connect error:", e)
-            sock.close()
-            continue
-        sock.settimeout(5)
+        print("task 1 start")
 
         count = 0
         err   = 0
@@ -188,66 +215,89 @@ while True:
         if code:
             for i in code:
                 print(i)
-                img.draw_retangle(i.rect())
-                for i in code:
-                    lcd.draw_string(i.x(), i.y(), classes[i.classid()], lcd.RED, lcd.WHITE)
-                    lcd.draw_string(i.x(), i.y()+12, '%.3f'%i.value(), lcd.RED, lcd.WHITE)
-                    lcd.display(img)
-        else:
-            pass
+                img.draw_rectangle(i.rect())
+            for i in code:
+                lcd.draw_string(i.x(), i.y(), classes[i.classid()], lcd.RED, lcd.WHITE)
+                lcd.draw_string(i.x(), i.y()+12, '%.3f'%i.value(), lcd.RED, lcd.WHITE)
+            if GNSS.DataIsUseful == False:
+                print("GNSS is not useful")
+                lcd.display(img)
+                lcd.draw_string(0, 0, "GNSS is not useful!", lcd.RED, lcd.WHITE)
+            else:
+                lcd.display(img)
 
-        if GNSS.DataIsUseful == False:
-            img.draw_string(0, 0, "GNSS is not useful!", lcd.RED, lcd.WHITE)
-            lcd.display(img)
-        else:
-            lcd.display(img)
+                # json
+                try:
+                    sock.connect(addr)
+                except Exception as e:
+                    print("connect error:", e)
+                    sock.close()
+                    continue
+                sock.settimeout(5)
 
-            # json
-            GNSS_data = [
-                {
-                    'client_number' : client_number,
-                    'latitude' : GNSS.latitude,
-                    'longtitude' : GNSS.longitude,
-                    'date' : GNSS.date,
-                    'UTC_Time' : GNSS.UTC_Time,
-                }
-            ]
+                GNSS_data = [
+                    {
+                        'client_number' : client_number,
+                        'latitude' : GNSS.latitude,
+                        'longtitude' : GNSS.longitude,
+                        'date' : GNSS.date,
+                        'UTC_Time' : GNSS.UTC_Time,
+                    }
+                ]
 
-            json_str = json.dumps(GNSS_data)
-            json_str = "\r\r" + json_str + "\r\r"
-            send_len = sock.sendall(json_str)
+                print("now sending the json")
+                json_str = json.dumps(GNSS_data)
+                json_str = "\r\r" + json_str + "\r\r"
+                send_len = sock.send(json_str)
 
-            # socket 发送图片
-            img = img.compress(quality=60)
-            img_bytes = img.to_bytes()
-            print("send len: ", len(img_bytes))
-            try:
-                block = int(len(img_bytes)/2048)
-                for i in range(block):
-                    send_len = sock.send(img_bytes[i*2048:(i+1)*2048])
+                sock.close()
+
+                # socket 发送图片
+                try:
+                    sock.connect(addr)
+                except Exception as e:
+                    print("connect error:", e)
+                    sock.close()
+                    continue
+                sock.settimeout(5)
+
+                img = img.compress(quality=50)
+                img_bytes = img.to_bytes()
+                print("now sending the image")
+                print("send len: ", len(img_bytes))
+                try:
+                    block = int(len(img_bytes)/2048)
+                    for i in range(block):
+                        send_len = sock.send(img_bytes[i*2048:(i+1)*2048])
+                        #time.sleep_ms(500)
+                    send_len2 = sock.send(img_bytes[block*2048:])
+                    #send_len = sock.send(img_bytes[0:2048])
+                    #send_len = sock.send(img_bytes[2048:])
                     #time.sleep_ms(500)
-                send_len2 = sock.send(img_bytes[block*2048:])
-                #send_len = sock.send(img_bytes[0:2048])
-                #send_len = sock.send(img_bytes[2048:])
-                #time.sleep_ms(500)
-                if send_len == 0:
-                    raise Exception("send fail")
-            except OSError as e:
-                if e.args[0] == 128:
-                    print("connection closed")
-                    break
-            except Exception as e:
-                print("send fail:", e)
-                time.sleep(1)
-                err += 1
-                continue
-            count += 1
-            print("send:", count)
-            sock.close()
-        
+                    if send_len == 0:
+                        raise Exception("send fail")
+                except OSError as e:
+                    if e.args[0] == 128:
+                        print("connection closed")
+                        break
+                except Exception as e:
+                    print("send fail:", e)
+                    time.sleep(1)
+                    err += 1
+                    continue
+                count += 1
+                print("send:", count)
+                sock.close()
+                print("sock close")
+
+        else:
+            lcd.display(img)
+
+        #global GLOBAL_STATE
         if GLOBAL_STATE == 2:
             kpu.deinit(task)
             ROAD_CONDITION_INIT = 0
+            print("breaking road detect task")
             break
 
 
@@ -256,7 +306,7 @@ while True:
 
     class_IDs = ['no_mask', 'mask']
 
-    IR_sensor_i2c = I2C(I2C.I2C0, freq=100000, scl=28, sda=29)
+    IR_sensor_i2c = I2C(I2C.I2C0, freq=100000, scl=32, sda=33)
     devices = IR_sensor_i2c.scan()
     IR_sensor = MLX90614(IR_sensor_i2c)
 
@@ -266,7 +316,8 @@ while True:
     sensor.set_hmirror(0)
     sensor.run(1)
 
-    task = kpu.load("/sd/mask.kmodel")
+    task = kpu.load(0x700000)
+    #task = kpu.load("/sd/mask.kmodel")
 
     anchor = (0.1606, 0.3562, 0.4712, 0.9568, 0.9877, 1.9108, 1.8761, 3.5310, 3.4423, 5.6823)
     _ = kpu.init_yolo2(task, 0.5, 0.3, 5, anchor)
@@ -298,52 +349,29 @@ while True:
                 if classID == MASKED and confidence > 0.65:
                     _ = img.draw_rectangle(itemROL, color_G, tickness=5)
                     if totalRes == 1:
-                        drawConfidenceText(img, (0, 0), 1, confidence)
+                        drawConfidenceText(img, (40, 0), 1, confidence, color_G)
                 else:
                     _ = img.draw_rectangle(itemROL, color=color_R, tickness=5)
                     if totalRes == 1:
-                        drawConfidenceText(img, (0, 0), 0, confidence)
+                        drawConfidenceText(img, (40, 0), 0, confidence, color_R)
 
-            IR_temp = IR_sensor.readObjectTempC()
+            IR_temp = IR_sensor.readObjectTempC() + 2.5
 
             print(IR_temp)
             if IR_temp > 37.5:
                 LED_state = LED_RED
 
-            img.draw_string(230, 0, str(IR_temp), color=color_R, scale=2.5)
+                img.draw_string(230, 0, str(IR_temp), color = color_R, scale = 2.5)
+            else:
+                img.draw_string(230, 0, str(IR_temp), color = color_G, scale = 2.5)
 
         else:
             LED_state = LED_BLANK
 
-        LED_update()
+        #LED_update()
 
         _ = lcd.display(img)
-
         print(clock.fps())
-
         if GLOBAL_STATE == 1:
             kpu.deinit(task)
             break
-
-def drawConfidenceText(image, rol, classid, value):
-    text = ""
-    _confidence = int(value * 100)
-
-    if classid == MASKED:
-        text = 'mask: ' + str(_confidence) + '%'
-    else:
-        text = 'no_mask: ' + str(_confidence) + '%'
-
-    image.draw_string(rol[0], rol[1], text, color=color_R, scale=2.5)
-
-def LED_update():
-    if LED_state == LED_BLANK:
-        LED.set_LED(0, LED_BLANK)
-    elif LED_state == LED_RED:
-        LED.set_LED(0, LED_RED)
-    elif LED_state == LED_YELLOW:
-        LED.set_LED(0, LED_YELLOW)
-    elif LED_state == LED_GREEN:
-        LED.set_LED(0, LED_GREEN)
-
-    LED.display()

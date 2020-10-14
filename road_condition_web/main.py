@@ -14,7 +14,7 @@ def index():
 
 @app.route('/showPicture', methods=['POST', 'GET'])
 def picture():
-    with open('./static/data/earthquake.js', 'r', encoding='utf-8') as f:
+    with open(R'D:\12484\Documents\Github\road_condition_web\road_condition_web\static\data\earthquake.js', 'r', encoding='utf-8') as f:
         content = f.read()
     earthQuake = content[17:len(content)-1]
     return earthQuake

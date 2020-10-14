@@ -1,56 +1,101 @@
-# 作为上位机接收客户机发送的图片和分类数据，视后期业务逻辑送往数据库/服务器二次鉴别
-
-# 图片信息：使用 json 字符串存储图片的文件名、经纬度、时间等信息
-# 图片名初步计划使用 拍摄时间-序号组成。如 2020-0920-08:00:00-5.jpg 代表 20200920 八点整拍摄的第五张照片 
-# json 格式初定如下
-# {
-#     'client_num': ,
-#     'latitude': ,
-#     'longtitude': ,
-#     'date': ,
-#     'UTC_time': ,
-#     'pic_name': 
-# }
-
-# 使用 socket 发送时，先发送图片信息，再是图片本身
-
-import socket, threading, json, pymysql
+import socket, threading, json, pymysql, pygame
 
 def link_handler(link, client):
-
-    print("Sever start receiving the requeset from [%s:%s]" % (client[0], client[1]))
-
-    link.settimeout(10)
-    # 
-    json_end = False
-    img_end = False
-
+    conn.settimeout(10)
+    conn_end = False
+    pack_size = 1024*5
     while True:
+        if conn_end:
+            break
         img = b""
-        json = b""
-        temp = b''
+        jsn = b""
+        tmp = b''
+
+        isJson = False
+        isImage = False
 
         while True:
             try:
-                client_data = link.recv(1)
-            
+                client_data = conn.recv(1)
             except socket.timeout:
-
+                conn_end = True
                 break
-            if temp == b'\r' and client_data == b'\n':
-                break
-            elif temp == b'\xFF' and client_data == b'\xD8':
+            # JPEG 文件头
+            if tmp == b'\xFF' and client_data == b'\xD8':
                 img = b'\xFF\xD8'
+                isImage = True
                 break
+            # 自定义的 JSON 字符串开始标识
+            elif tmp == b'\x0D' and client_data == b'\x0D':
+                isJson = True
+                break
+            
+            tmp = client_data
         
-        link.close()
+            if isImage == True:    
+                while True:
+                    try:
+                        client_data = conn.recv(4096)
+                    except socket.timeout:
+                        client_data = None
+                        conn_end = True
+                    if not client_data:
+                        break
+                    # print("received data,len:",len(client_data) )
+                    img += client_data
+                    if img[-2:] == b'\xFF\xD9':
+                        break
+                    if len(client_data) > pack_size:
+                        break
+                print("recive end, pic len:", len(img))
+
+                if not img.startswith(b'\xFF\xD8') or not img.endswith(b'\xFF\xD9'):
+                    print("image error")
+                    continue
+                f = open("tmp.jpg", "wb")
+                f.write(img)
+                f.close()
+                
+                isImage = False
+            
+            elif isJson == True:
+
+                try:
+                    client_data = conn.recv(512)
+                except socket.timeout:
+                    client_data = None
+                    conn_end = True
+                if not client_data:
+                    continue
+                # print("received data,len:",len(client_data) )
+                img += client_data
+                if jsn[-2:] != b'\x0D\x0D':
+                    print("json format error")
+                
+                print("recive end, json len:", len(img))
+
+                try:
+                    jsn = jsn.decode("ASCII")
+                except UnicodeError:
+                    print("json decode ASCII error")
+
+                # 去除 json 字符串末尾的两个换行符
+                jsn = jsn[:-2]
+
+                dic = json.loads(jsn)
+
+                print(dic)
+
+                isJson = False
+                
+    conn.close()
+    print("receive thread end")
 
 ip_port = ('192.168.1.225', '3456')
 socket1 = socket.socket()
 socket1.bind(ip_port)
 socket1.listen(5)
 
-mysql_conn = pymysql.connect(host= '127.0.0.1', port= , user= '', password= '', db= '')
 
 while True:
     conn, address = socket1.accept()
