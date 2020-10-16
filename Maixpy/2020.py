@@ -5,6 +5,7 @@ import KPU as kpu
 from fpioa_manager import fm
 from Maix import GPIO
 from machine import UART, Timer, I2C, reset
+import machine
 
 from Air530 import Air530
 from ADXL345_ATmode import Ace
@@ -49,13 +50,6 @@ color_R = (255, 0, 0)
 color_G = (0, 255, 0)
 color_B = (0, 0, 255)
 color_Yellow = (255, 255, 0)
-
-LED_BLANK = 0
-LED_RED = 1
-LED_GREEN = 2
-LED_YELLOW = 3
-
-LED_state = 0
 ####################################################################
 
 MASKED = 1
@@ -104,6 +98,16 @@ def GNSS_info_update(timer):
 tim = Timer(Timer.TIMER0, Timer.CHANNEL0, mode=Timer.MODE_PERIODIC, period=3000, callback=GNSS_info_update)
 tim.stop()
 
+tim_PWM = machine.Timer(machine.Timer.TIMER2, machine.Timer.CHANNEL0, mode=machine.Timer.MODE_PWM)
+ch_PWM = machine.PWM(tim_PWM, freq=1000, duty=50, pin=2, enable=False)
+
+def PWM_STOP(timer):
+    ch_PWM.disable()
+
+tim_PWM_STOP = Timer(Timer.TIMER1, Timer.CHANNEL1, mode=Timer.MODE_PERIODIC, period=1500,callback=PWM_STOP)
+
+
+
 # 按钮触发中断，回调函数判断当前状态
 def key_irq(pin_num):
     global GLOBAL_STATE
@@ -131,18 +135,6 @@ def drawConfidenceText(image, rol, classid, value, color):
         text = 'no_mask: ' + str(_confidence) + '%'
 
     image.draw_string(rol[0], rol[1], text, color=color, scale=2.5)
-
-def LED_update():
-    if LED_state == LED_BLANK:
-        LED.set_led(0, LED_BLANK)
-    elif LED_state == LED_RED:
-        LED.set_led(0, LED_RED)
-    elif LED_state == LED_YELLOW:
-        LED.set_led(0, LED_YELLOW)
-    elif LED_state == LED_GREEN:
-        LED.set_led(0, LED_GREEN)
-
-    LED.display()
 
 
 # 在下面这个大死循环里面，有路面检测和口罩识别两个任务的死循环
@@ -177,9 +169,9 @@ while True:
     GNSS.GNSS_Parese()
     #GNSS.print_GNSS_info()
 
-    GNSS.DataIsUseful = True
+    #GNSS.DataIsUseful = True
 
-    #tim.start()
+    tim.start()
 
     clock = time.clock()
 
@@ -193,7 +185,7 @@ while True:
 
         img = sensor.snapshot()
         code = kpu.run_yolo2(task, img)
-        #print(clock.fps())
+        print(clock.fps())
 
         img.draw_string(0,0, "LAT: "+GNSS.latitude+GNSS.N_S, color=color_R, scale = 1.0)
         img.draw_string(0,16, "LON: "+GNSS.longitude+GNSS.E_W, color=color_R, scale = 1.0)
@@ -312,25 +304,23 @@ while True:
 
         if code:
             totalRes = len(code)
-            LED_state = LED_GREEN
 
             for item in code:
                 confidence = float(item.value())
                 itemROL = item.rect()
                 classID = int(item.classid())
 
-                if classID == NOTMASKED:
-                    LED_state = LED_YELLOW
-
-                if confidence < 0.52:
+                if confidence < 0.55:
                     _ = img.draw_rectangle(itemROL, color=color_B, tickness=5)
                     continue
 
-                if classID == MASKED and confidence > 0.65:
+                elif classID == MASKED and confidence > 0.55:
                     _ = img.draw_rectangle(itemROL, color_G, tickness=5)
                     if totalRes == 1:
                         drawConfidenceText(img, (40, 0), 1, confidence, color_G)
                 else:
+                    ch_PWM.enable()
+                    tim_PWM_STOP.start()
                     _ = img.draw_rectangle(itemROL, color=color_R, tickness=5)
                     if totalRes == 1:
                         drawConfidenceText(img, (40, 0), 0, confidence, color_R)
@@ -339,14 +329,14 @@ while True:
 
             print(IR_temp)
             if IR_temp > 37.5:
-                LED_state = LED_RED
-
-                img.draw_string(230, 0, str(IR_temp), color = color_R, scale = 2.5)
+                ch_PWM.enable()
+                tim_PWM_STOP.start()
+                img.draw_string(230, 0, str(IR_temp), color = color_R, scale = 1.5)
             else:
-                img.draw_string(230, 0, str(IR_temp), color = color_G, scale = 2.5)
+                img.draw_string(230, 0, str(IR_temp), color = color_G, scale = 1.5)
 
         else:
-            LED_state = LED_BLANK
+            pass
 
         _ = lcd.display(img)
         print(clock.fps())
