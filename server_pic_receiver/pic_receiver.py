@@ -1,6 +1,23 @@
-import socket, threading, json, pymysql, pygame
+#!/usr/bin/env python3
+# coding:utf-8
+import socket
+import time
+import threading
+import datetime
+import pygame
+import json
+from pygame.locals import QUIT, KEYDOWN, K_f, K_F11, FULLSCREEN
 
-def link_handler(link, client):
+local_ip = ""
+local_port = 3456
+width = 320
+height = 240
+
+# jpeg 20 fps
+# esp32 spi dma temp buffer MAX Len: 4k
+
+
+def receiveThread(conn):
     conn.settimeout(10)
     conn_end = False
     pack_size = 1024*5
@@ -8,96 +25,88 @@ def link_handler(link, client):
         if conn_end:
             break
         img = b""
-        jsn = b""
         tmp = b''
-
-        isJson = False
-        isImage = False
-
         while True:
             try:
                 client_data = conn.recv(1)
             except socket.timeout:
                 conn_end = True
                 break
-            # JPEG 文件头
             if tmp == b'\xFF' and client_data == b'\xD8':
                 img = b'\xFF\xD8'
-                isImage = True
                 break
-            # 自定义的 JSON 字符串开始标识
-            elif tmp == b'\x0D' and client_data == b'\x0D':
-                isJson = True
-                break
-            
             tmp = client_data
-        
-            if isImage == True:    
-                while True:
-                    try:
-                        client_data = conn.recv(4096)
-                    except socket.timeout:
-                        client_data = None
-                        conn_end = True
-                    if not client_data:
-                        break
-                    # print("received data,len:",len(client_data) )
-                    img += client_data
-                    if img[-2:] == b'\xFF\xD9':
-                        break
-                    if len(client_data) > pack_size:
-                        break
-                print("recive end, pic len:", len(img))
+        while True:
+            try:
+                client_data = conn.recv(4096)
+            except socket.timeout:
+                client_data = None
+                conn_end = True
+            if not client_data:
+                break
+            # print("received data,len:",len(client_data) )
+            img += client_data
+            if img[-2:] == b'\xFF\xD9':
+                break
+            if len(client_data) > pack_size:
+                break
+        print("recive end, pic len:", len(img))
 
-                if not img.startswith(b'\xFF\xD8') or not img.endswith(b'\xFF\xD9'):
-                    print("image error")
-                    continue
-                f = open("tmp.jpg", "wb")
-                f.write(img)
-                f.close()
-                
-                isImage = False
-            
-            elif isJson == True:
+        jsn_start = img.index(b'\x0D\x0D\x0D\x0D', 4000)
 
-                try:
-                    client_data = conn.recv(512)
-                except socket.timeout:
-                    client_data = None
-                    conn_end = True
-                if not client_data:
-                    continue
-                # print("received data,len:",len(client_data) )
-                img += client_data
-                if jsn[-2:] != b'\x0D\x0D':
-                    print("json format error")
-                
-                print("recive end, json len:", len(img))
+        jsn = img[jsn_start+4:]
 
-                try:
-                    jsn = jsn.decode("ASCII")
-                except UnicodeError:
-                    print("json decode ASCII error")
+        img = img[:jsn_start]
 
-                # 去除 json 字符串末尾的两个换行符
-                jsn = jsn[:-2]
+        if not img.startswith(b'\xFF\xD8') or not img.endswith(b'\xFF\xD9'):
+            print("image error")
+            continue
+        f = open("tmp.jpg", "wb")
+        f.write(img)
+        f.close()
 
-                dic = json.loads(jsn)
+        jsn = jsn.decode("ASCII")
+        print(json.loads(jsn))
 
-                print(dic)
-
-                isJson = False
-                
+        try:
+            surface = pygame.image.load("tmp.jpg").convert()
+            screen.blit(surface, (0, 0))
+            pygame.display.update()
+            print("recieve ok")
+        except Exception as e:
+            print(e)
     conn.close()
     print("receive thread end")
 
-ip_port = ('192.168.1.225', '3456')
-socket1 = socket.socket()
-socket1.bind(ip_port)
-socket1.listen(5)
 
+pygame.init()
+screen = pygame.display.set_mode((width, height), 0, 32)
+pygame.display.set_caption("pic from client")
+
+ip_port = (local_ip, local_port)
+sk = socket.socket()
+sk.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+sk.bind(ip_port)
+sk.listen(50)
+print("accept now,wait for client")
+
+
+def server():
+    while True:
+        conn, addr = sk.accept()
+        print("hello client,ip:")
+        print(addr)
+        t = threading.Thread(target=receiveThread, args=(conn,))
+        t.setDaemon(True)
+        t.start()
+
+
+tmp = threading.Thread(target=server, args=())
+tmp.setDaemon(True)
+tmp.start()
 
 while True:
-    conn, address = socket1.accept()
-    t = threading.Thread(target=link_handler, args=(conn,address))
-    t.start()
+
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            exit()

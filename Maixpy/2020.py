@@ -5,20 +5,19 @@ import KPU as kpu
 from fpioa_manager import fm
 from Maix import GPIO
 from machine import UART, Timer, I2C, reset
-#from modules import ws2812
 
 from Air530 import Air530
 from ADXL345_ATmode import Ace
 from MLX90614 import MLX90614
 
 # 功能切换变量
-GLOBAL_STATE = 0
+GLOBAL_STATE = 1
 
 # 网络参数
 ####################################################################
-WIFI_SSID = 'ESP8266'
+WIFI_SSID = '123456'
 WIFI_PASSWD = '43214321a'
-server_ip = "192.168.1.225"
+server_ip = "192.168.43.93"
 server_port = 3456
 ####################################################################
 
@@ -51,8 +50,6 @@ color_G = (0, 255, 0)
 color_B = (0, 0, 255)
 color_Yellow = (255, 255, 0)
 
-#LED = ws2812(34, 1)
-
 LED_BLANK = 0
 LED_RED = 1
 LED_GREEN = 2
@@ -71,11 +68,9 @@ GNSS = Air530(uart1)
 lcd.init(freq=1500000)
 lcd.clear(lcd.BLACK)
 lcd.rotation(1)
-#img = image.Image('/sd/hxcl_logo.jpg')
+#img = image.Image('/flash/hxcl_logo.jpg')
 #lcd.display(img)
-#time.sleep(2)
-#img = image.Image('/sd/introduction.jpg')
-#lcd.display(img)
+#time.sleep(1)
 
 # ESP32 连接 WiFi
 network = network.ESP32_SPI(cs=fm.fpioa.GPIOHS10,rst=fm.fpioa.GPIOHS11, rdy=fm.fpioa.GPIOHS12, mosi=fm.fpioa.GPIOHS13, miso=fm.fpioa.GPIOHS14, sclk=fm.fpioa.GPIOHS15)
@@ -90,7 +85,7 @@ if not network.isconnected():
             except Exception:
                 err += 1
                 print("Connect AP failed, now try again")
-                if err > 3:
+                if err > 1:
                     raise Exception("Conenct AP fail")
                 continue
             break
@@ -104,12 +99,6 @@ if not network.isconnected():
 def GNSS_info_update(timer):
     GNSS.GNSS_Read()
     GNSS.GNSS_Parese()
-    lcd.draw_string(0,40,"Date: "+GNSS.date,lcd.BLACK,lcd.WHITE)
-    lcd.draw_string(0,60,"UTC Time: "+GNSS.UTC_Time,lcd.BLACK,lcd.WHITE)
-    lcd.draw_string(0,80,"latitude:  "+GNSS.latitude+GNSS.N_S,lcd.BLACK,lcd.WHITE)
-    lcd.draw_string(0,100,"longitude: "+GNSS.longitude+GNSS.E_W,lcd.BLACK,lcd.WHITE)
-    lcd.draw_string(0,120,"Speed: "+str(GNSS.speed_to_groud_kh)+"km/h",lcd.BLACK,lcd.WHITE)
-    lcd.draw_string(0,140,"Course_over_ground: "+str(GNSS.course_over_ground),lcd.BLACK,lcd.WHITE)
     GNSS.print_GNSS_info()
 
 tim = Timer(Timer.TIMER0, Timer.CHANNEL0, mode=Timer.MODE_PERIODIC, period=3000, callback=GNSS_info_update)
@@ -145,13 +134,13 @@ def drawConfidenceText(image, rol, classid, value, color):
 
 def LED_update():
     if LED_state == LED_BLANK:
-        LED.set_LED(0, LED_BLANK)
+        LED.set_led(0, LED_BLANK)
     elif LED_state == LED_RED:
-        LED.set_LED(0, LED_RED)
+        LED.set_led(0, LED_RED)
     elif LED_state == LED_YELLOW:
-        LED.set_LED(0, LED_YELLOW)
+        LED.set_led(0, LED_YELLOW)
     elif LED_state == LED_GREEN:
-        LED.set_LED(0, LED_GREEN)
+        LED.set_led(0, LED_GREEN)
 
     LED.display()
 
@@ -161,7 +150,7 @@ def LED_update():
 # 全局变量 GLOBAL_STATE 在按键中断中修改
 while True:
 
-    sensor.reset()
+    sensor.reset(dual_buf=True)
     sensor.set_pixformat(sensor.RGB565)
     sensor.set_framesize(sensor.QVGA)
     sensor.set_windowing((224, 224))
@@ -186,22 +175,16 @@ while True:
     # 路面检测需要使用 GPS 因此启动定时器
     GNSS.GNSS_Read()
     GNSS.GNSS_Parese()
-    lcd.draw_string(0,40,"Date: "+GNSS.date,lcd.BLACK,lcd.WHITE)
-    lcd.draw_string(0,60,"UTC Time: "+GNSS.UTC_Time,lcd.BLACK,lcd.WHITE)
-    lcd.draw_string(0,80,"latitude:  "+GNSS.latitude+GNSS.N_S,lcd.BLACK,lcd.WHITE)
-    lcd.draw_string(0,100,"longitude: "+GNSS.longitude+GNSS.E_W,lcd.BLACK,lcd.WHITE)
-    lcd.draw_string(0,120,"Speed: "+str(GNSS.speed_to_groud_kh)+"km/h",lcd.BLACK,lcd.WHITE)
-    lcd.draw_string(0,140,"Course_over_ground: "+str(GNSS.course_over_ground),lcd.BLACK,lcd.WHITE)
-    GNSS.print_GNSS_info()
+    #GNSS.print_GNSS_info()
 
-    #GNSS.DataIsUseful = True
+    GNSS.DataIsUseful = True
 
-    tim.start()
+    #tim.start()
 
     clock = time.clock()
 
     while True:
-        print("task 1 start")
+        #print("task 1 start")
 
         count = 0
         err   = 0
@@ -210,7 +193,14 @@ while True:
 
         img = sensor.snapshot()
         code = kpu.run_yolo2(task, img)
-        print(clock.fps())
+        #print(clock.fps())
+
+        img.draw_string(0,0, "LAT: "+GNSS.latitude+GNSS.N_S, color=color_R, scale = 1.0)
+        img.draw_string(0,16, "LON: "+GNSS.longitude+GNSS.E_W, color=color_R, scale = 1.0)
+        img.draw_string(0,32, "Speed: "+str(GNSS.speed_to_groud_kh)+"km/h",color=color_R, scale = 1.0)
+
+        if GNSS.DataIsUseful == False:
+            img.draw_string(120, 0, "GPS is not useful", color=color_R, scale = 1.0)
 
         if code:
             for i in code:
@@ -222,37 +212,11 @@ while True:
             if GNSS.DataIsUseful == False:
                 print("GNSS is not useful")
                 lcd.display(img)
-                lcd.draw_string(0, 0, "GNSS is not useful!", lcd.RED, lcd.WHITE)
             else:
                 lcd.display(img)
 
-                # json
-                try:
-                    sock.connect(addr)
-                except Exception as e:
-                    print("connect error:", e)
-                    sock.close()
-                    continue
-                sock.settimeout(5)
 
-                GNSS_data = [
-                    {
-                        'client_number' : client_number,
-                        'latitude' : GNSS.latitude,
-                        'longtitude' : GNSS.longitude,
-                        'date' : GNSS.date,
-                        'UTC_Time' : GNSS.UTC_Time,
-                    }
-                ]
-
-                print("now sending the json")
-                json_str = json.dumps(GNSS_data)
-                json_str = "\r\r" + json_str + "\r\r"
-                send_len = sock.send(json_str)
-
-                sock.close()
-
-                # socket 发送图片
+                # socket 发送图片和图片信息
                 try:
                     sock.connect(addr)
                 except Exception as e:
@@ -264,7 +228,23 @@ while True:
                 img = img.compress(quality=50)
                 img_bytes = img.to_bytes()
                 print("now sending the image")
-                print("send len: ", len(img_bytes))
+
+                GNSS_data = [
+                    {
+                        'client_number' : client_number,
+                        'latitude' : GNSS.latitude,
+                        'longtitude' : GNSS.longitude,
+                        'date' : GNSS.date,
+                        'UTC_Time' : GNSS.UTC_Time,
+                    }
+                ]
+                json_str = json.dumps(GNSS_data)
+                json_str = "\r\r\r\r" + json_str
+
+                json_bytes = json_str.encode("ASCII")
+
+                img_bytes = img_bytes + json_bytes
+
                 try:
                     block = int(len(img_bytes)/2048)
                     for i in range(block):
@@ -316,7 +296,7 @@ while True:
     sensor.set_hmirror(0)
     sensor.run(1)
 
-    task = kpu.load(0x700000)
+    task = kpu.load(0x800000)
     #task = kpu.load("/sd/mask.kmodel")
 
     anchor = (0.1606, 0.3562, 0.4712, 0.9568, 0.9877, 1.9108, 1.8761, 3.5310, 3.4423, 5.6823)
@@ -367,8 +347,6 @@ while True:
 
         else:
             LED_state = LED_BLANK
-
-        #LED_update()
 
         _ = lcd.display(img)
         print(clock.fps())
