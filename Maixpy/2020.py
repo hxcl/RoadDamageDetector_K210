@@ -16,9 +16,9 @@ GLOBAL_STATE = 1
 
 # 网络参数
 ####################################################################
-WIFI_SSID = '123456'
+WIFI_SSID = 'ESP8266'
 WIFI_PASSWD = '43214321a'
-server_ip = "192.168.43.93"
+server_ip = "192.168.1.172"
 server_port = 3456
 ####################################################################
 
@@ -61,7 +61,7 @@ GNSS = Air530(uart1)
 # 展示 Logo 与介绍信息
 lcd.init(freq=1500000)
 lcd.clear(lcd.BLACK)
-lcd.rotation(1)
+#lcd.rotation(1)
 #img = image.Image('/flash/hxcl_logo.jpg')
 #lcd.display(img)
 #time.sleep(1)
@@ -146,7 +146,7 @@ while True:
     sensor.set_pixformat(sensor.RGB565)
     sensor.set_framesize(sensor.QVGA)
     sensor.set_windowing((224, 224))
-    sensor.set_brightness(2)
+    sensor.set_brightness(5)
     sensor.run(1)
 
     sock = socket.socket()
@@ -169,9 +169,9 @@ while True:
     GNSS.GNSS_Parese()
     #GNSS.print_GNSS_info()
 
-    #GNSS.DataIsUseful = True
+    GNSS.DataIsUseful = True
 
-    tim.start()
+    #tim.start()
 
     clock = time.clock()
 
@@ -187,6 +187,8 @@ while True:
         code = kpu.run_yolo2(task, img)
         print(clock.fps())
 
+        image_class_id = []
+
         img.draw_string(0,0, "LAT: "+GNSS.latitude+GNSS.N_S, color=color_R, scale = 1.0)
         img.draw_string(0,16, "LON: "+GNSS.longitude+GNSS.E_W, color=color_R, scale = 1.0)
         img.draw_string(0,32, "Speed: "+str(GNSS.speed_to_groud_kh)+"km/h",color=color_R, scale = 1.0)
@@ -197,6 +199,7 @@ while True:
         if code:
             for i in code:
                 print(i)
+                image_class_id.append(classes[i.classid()])
                 img.draw_rectangle(i.rect())
             for i in code:
                 lcd.draw_string(i.x(), i.y(), classes[i.classid()], lcd.RED, lcd.WHITE)
@@ -217,7 +220,7 @@ while True:
                     continue
                 sock.settimeout(5)
 
-                img = img.compress(quality=50)
+                img = img.compress(quality=80)
                 img_bytes = img.to_bytes()
                 print("now sending the image")
 
@@ -226,8 +229,7 @@ while True:
                         'client_number' : client_number,
                         'latitude' : GNSS.latitude,
                         'longtitude' : GNSS.longitude,
-                        'date' : GNSS.date,
-                        'UTC_Time' : GNSS.UTC_Time,
+                        'classes' : image_class_id,
                     }
                 ]
                 json_str = json.dumps(GNSS_data)
@@ -236,6 +238,7 @@ while True:
                 json_bytes = json_str.encode("ASCII")
 
                 img_bytes = img_bytes + json_bytes
+                print(len(img_bytes))
 
                 try:
                     block = int(len(img_bytes)/2048)
