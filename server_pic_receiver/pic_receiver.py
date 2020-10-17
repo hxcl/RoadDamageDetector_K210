@@ -177,6 +177,31 @@ def server():
         t.setDaemon(True)
         t.start()
 
+pygame.init()
+screen = pygame.display.set_mode((width, height), 0, 32)
+pygame.display.set_caption("pic from client")
+
+ip_port = (local_ip, local_port)
+sk = socket.socket()
+sk.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+sk.bind(ip_port)
+sk.listen(50)
+print("accept now,wait for client")
+
+
+def server():
+    while True:
+        conn, addr = sk.accept()
+        print("hello client,ip:")
+        print(addr)
+        t = threading.Thread(target=receiveThread, args=(conn,))
+        t.setDaemon(True)
+        t.start()
+
+
+tmp = threading.Thread(target=server, args=())
+tmp.setDaemon(True)
+tmp.start()
 
 tmp = threading.Thread(target=server, args=())
 tmp.setDaemon(True)

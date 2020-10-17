@@ -5,6 +5,7 @@ import KPU as kpu
 from fpioa_manager import fm
 from Maix import GPIO
 from machine import UART, Timer, I2C, reset
+import machine
 
 from Air530 import Air530
 from ADXL345_ATmode import Ace
@@ -17,7 +18,7 @@ GLOBAL_STATE = 1
 ####################################################################
 WIFI_SSID = '123456'
 WIFI_PASSWD = '43214321a'
-server_ip = "192.168.43.93"
+server_ip = "192.168.1.172"
 server_port = 3456
 ####################################################################
 
@@ -49,13 +50,6 @@ color_R = (255, 0, 0)
 color_G = (0, 255, 0)
 color_B = (0, 0, 255)
 color_Yellow = (255, 255, 0)
-
-LED_BLANK = 0
-LED_RED = 1
-LED_GREEN = 2
-LED_YELLOW = 3
-
-LED_state = 0
 ####################################################################
 
 MASKED = 1
@@ -67,7 +61,7 @@ GNSS = Air530(uart1)
 # 展示 Logo 与介绍信息
 lcd.init(freq=1500000)
 lcd.clear(lcd.BLACK)
-lcd.rotation(1)
+#lcd.rotation(1)
 #img = image.Image('/flash/hxcl_logo.jpg')
 #lcd.display(img)
 #time.sleep(1)
@@ -104,6 +98,16 @@ def GNSS_info_update(timer):
 tim = Timer(Timer.TIMER0, Timer.CHANNEL0, mode=Timer.MODE_PERIODIC, period=3000, callback=GNSS_info_update)
 tim.stop()
 
+tim_PWM = machine.Timer(machine.Timer.TIMER2, machine.Timer.CHANNEL0, mode=machine.Timer.MODE_PWM)
+ch_PWM = machine.PWM(tim_PWM, freq=1000, duty=50, pin=2, enable=False)
+
+def PWM_STOP(timer):
+    ch_PWM.disable()
+
+tim_PWM_STOP = Timer(Timer.TIMER1, Timer.CHANNEL1, mode=Timer.MODE_PERIODIC, period=1500,callback=PWM_STOP)
+
+
+
 # 按钮触发中断，回调函数判断当前状态
 def key_irq(pin_num):
     global GLOBAL_STATE
@@ -132,18 +136,6 @@ def drawConfidenceText(image, rol, classid, value, color):
 
     image.draw_string(rol[0], rol[1], text, color=color, scale=2.5)
 
-def LED_update():
-    if LED_state == LED_BLANK:
-        LED.set_led(0, LED_BLANK)
-    elif LED_state == LED_RED:
-        LED.set_led(0, LED_RED)
-    elif LED_state == LED_YELLOW:
-        LED.set_led(0, LED_YELLOW)
-    elif LED_state == LED_GREEN:
-        LED.set_led(0, LED_GREEN)
-
-    LED.display()
-
 
 # 在下面这个大死循环里面，有路面检测和口罩识别两个任务的死循环
 # 两个任务的一次循环最后，都会判断一次全局变量 GLOBAL_STATE，以决定是否跳出，也就是切换任务
@@ -154,7 +146,7 @@ while True:
     sensor.set_pixformat(sensor.RGB565)
     sensor.set_framesize(sensor.QVGA)
     sensor.set_windowing((224, 224))
-    sensor.set_brightness(2)
+    sensor.set_brightness(5)
     sensor.run(1)
 
     sock = socket.socket()
@@ -202,9 +194,19 @@ while True:
         if GNSS.DataIsUseful == False:
             img.draw_string(120, 0, "GPS is not useful", color=color_R, scale = 1.0)
 
+        image_class_id = []
+
+        img.draw_string(0,0, "LAT: "+GNSS.latitude+GNSS.N_S, color=color_R, scale = 1.0)
+        img.draw_string(0,16, "LON: "+GNSS.longitude+GNSS.E_W, color=color_R, scale = 1.0)
+        img.draw_string(0,32, "Speed: "+str(GNSS.speed_to_groud_kh)+"km/h",color=color_R, scale = 1.0)
+
+        if GNSS.DataIsUseful == False:
+            img.draw_string(120, 0, "GPS is not useful", color=color_R, scale = 1.0)
+
         if code:
             for i in code:
                 print(i)
+                image_class_id.append(classes[i.classid()])
                 img.draw_rectangle(i.rect())
             for i in code:
                 lcd.draw_string(i.x(), i.y(), classes[i.classid()], lcd.RED, lcd.WHITE)
@@ -225,7 +227,7 @@ while True:
                     continue
                 sock.settimeout(5)
 
-                img = img.compress(quality=50)
+                img = img.compress(quality=80)
                 img_bytes = img.to_bytes()
                 print("now sending the image")
 
@@ -234,8 +236,7 @@ while True:
                         'client_number' : client_number,
                         'latitude' : GNSS.latitude,
                         'longtitude' : GNSS.longitude,
-                        'date' : GNSS.date,
-                        'UTC_Time' : GNSS.UTC_Time,
+                        'classes' : image_class_id,
                     }
                 ]
                 json_str = json.dumps(GNSS_data)
@@ -244,6 +245,7 @@ while True:
                 json_bytes = json_str.encode("ASCII")
 
                 img_bytes = img_bytes + json_bytes
+                print(len(img_bytes))
 
                 try:
                     block = int(len(img_bytes)/2048)
@@ -312,25 +314,23 @@ while True:
 
         if code:
             totalRes = len(code)
-            LED_state = LED_GREEN
 
             for item in code:
                 confidence = float(item.value())
                 itemROL = item.rect()
                 classID = int(item.classid())
 
-                if classID == NOTMASKED:
-                    LED_state = LED_YELLOW
-
-                if confidence < 0.52:
+                if confidence < 0.55:
                     _ = img.draw_rectangle(itemROL, color=color_B, tickness=5)
                     continue
 
-                if classID == MASKED and confidence > 0.65:
+                elif classID == MASKED and confidence > 0.55:
                     _ = img.draw_rectangle(itemROL, color_G, tickness=5)
                     if totalRes == 1:
                         drawConfidenceText(img, (40, 0), 1, confidence, color_G)
                 else:
+                    ch_PWM.enable()
+                    tim_PWM_STOP.start()
                     _ = img.draw_rectangle(itemROL, color=color_R, tickness=5)
                     if totalRes == 1:
                         drawConfidenceText(img, (40, 0), 0, confidence, color_R)
@@ -339,14 +339,14 @@ while True:
 
             print(IR_temp)
             if IR_temp > 37.5:
-                LED_state = LED_RED
-
-                img.draw_string(230, 0, str(IR_temp), color = color_R, scale = 2.5)
+                ch_PWM.enable()
+                tim_PWM_STOP.start()
+                img.draw_string(230, 0, str(IR_temp), color = color_R, scale = 1.5)
             else:
-                img.draw_string(230, 0, str(IR_temp), color = color_G, scale = 2.5)
+                img.draw_string(230, 0, str(IR_temp), color = color_G, scale = 1.5)
 
         else:
-            LED_state = LED_BLANK
+            pass
 
         _ = lcd.display(img)
         print(clock.fps())
