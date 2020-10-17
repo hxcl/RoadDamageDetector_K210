@@ -89,7 +89,7 @@ class Air530():
                     self.latitude = "-1"
                 else:
                     self.latitude = temp[3]
-                    self.latitude = self.latitude[0:2]+' degree '+self.latitude[2:]+'\''
+                    self.latitude = self.latitude[0:2]+' '+self.latitude[2:4]+'\''
 
                 self.N_S = temp[4]
 
@@ -98,10 +98,10 @@ class Air530():
                 else:
                     self.longitude = temp[5]
                     #self.longitude = self.longitude[0:3]+'°'+self.latitude[3:]
-                    self.longitude = self.longitude[0:3]+' degree '+self.longitude[3:]+'\''
+                    self.longitude = self.longitude[:2]+' '+self.longitude[2:4]+'\''
 
                 self.E_W = temp[6]
-                
+
                 # RMC 中的速度以节为单位
                 if temp[7] != "":
                     try:
