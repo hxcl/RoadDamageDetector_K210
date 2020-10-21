@@ -89,7 +89,7 @@ class Air530():
                     self.latitude = "-1"
                 else:
                     self.latitude = temp[3]
-                    self.latitude = self.latitude[:2]+' '+self.latitude[2:9]+'\''
+                    self.latitude = self.latitude[:2]+' '+self.latitude[2:9]
 
                 self.N_S = temp[4]
 
@@ -98,7 +98,7 @@ class Air530():
                 else:
                     self.longitude = temp[5]
                     #self.longitude = self.longitude[0:3]+'°'+self.latitude[3:]
-                    self.longitude = self.longitude[:3]+' '+self.longitude[3:10]+'\''
+                    self.longitude = self.longitude[:3]+' '+self.longitude[3:10]
 
                 self.E_W = temp[6]
 
